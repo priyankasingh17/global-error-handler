@@ -1,0 +1,9 @@
+# DEV env specific settings
+jks:
+  password: ""
+  path: ""
+
+kafka:
+  url: ""
+  username: ""
+  password: ""

@@ -1,0 +1,416 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:secure-properties="http://www.mulesoft.org/schema/mule/secure-properties"
+	xmlns:tls="http://www.mulesoft.org/schema/mule/tls" xmlns:kafka="http://www.mulesoft.org/schema/mule/kafka"
+	xmlns:module-sg-mule-enterprise-logger="http://www.mulesoft.org/schema/mule/module-sg-mule-enterprise-logger"
+	xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="
+http://www.mulesoft.org/schema/mule/tls http://www.mulesoft.org/schema/mule/tls/current/mule-tls.xsd http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+http://www.mulesoft.org/schema/mule/module-sg-mule-enterprise-logger http://www.mulesoft.org/schema/mule/module-sg-mule-enterprise-logger/current/mule-module-sg-mule-enterprise-logger.xsd
+http://www.mulesoft.org/schema/mule/kafka http://www.mulesoft.org/schema/mule/kafka/current/mule-kafka.xsd
+http://www.mulesoft.org/schema/mule/secure-properties http://www.mulesoft.org/schema/mule/secure-properties/current/mule-secure-properties.xsd">
+	<module-sg-mule-enterprise-logger:config name="Error_Handler_Logger_Config" doc:name="SG Mule Enterprise Logger Config" doc:id="4f7a4ee2-8987-4b24-b8ac-dbebe1826f35" ddtags="#[output application/json --- 'team:075-oxygen-integration-mulesoft,x-correlation-id:' ++ (vars.vApi_Header.correlationId default correlationId) ++ ',env:' ++ Mule::p('mule.env')]"/>
+	<configuration-properties doc:name="Configuration properties" doc:id="d95e00d8-02e2-4713-9a33-f0ef2ed4190e" file="properties/error-handler-global-config.yaml" />
+	<configuration-properties doc:name="Env Specific Configuration properties" doc:id="2d632ad6-5724-497b-a34d-645b8bb86225" file="properties/error-handler-${mule.env}-config.yaml" />
+	<secure-properties:config
+		name="commonSecureProperties" doc:name="Secure Properties Config"
+		doc:id="866c7ad6-3508-4d1a-ad8e-9fe25e2c3458"
+		file="properties/error-handler-${mule.env}-config.yaml" key="${config.decoding.key}">
+	</secure-properties:config>
+	<kafka:producer-config
+		name="Apache_Kafka_Reprocess_Producer_configuration"
+		doc:name="Apache Kafka Producer configuration"
+		doc:id="352a491d-e3d0-49a8-be0f-305fbf040bd9">
+		<kafka:producer-sasl-plain-connection
+			username="${kafka.username}" password="${secure::kafka.password}"
+			retryBackoffTimeout="${kafka.retryBackoffTimeout}"
+			batchSize="${kafka.batchSize}" bufferSize="${kafka.bufferSize}"
+			connectionsMaximumIdleTimeout="${kafka.connectionsMaximumIdleTimeout}"
+			deliveryTimeout="${kafka.deliveryTimeout}"
+			lingerTime="${kafka.lingerTime}"
+			maximumBlockTime="${kafka.maximumBlockTime}"
+			maximumInFlightRequests="${kafka.maximumInFlightRequests}"
+			maximumRequestSize="${kafka.maximumRequestSize}"
+			receiveBufferSize="${kafka.receiveBufferSize}"
+			retries="${kafka.retries}" sendBufferSize="${kafka.sendBufferSize}"
+			requestTimeout="${kafka.requestTimeout}"
+			batchSizeUnit="${kafka.batchSizeUnit}"
+			bufferSizeUnit="${kafka.bufferSizeUnit}"
+			clientDNSLookup="${kafka.clientDNSLookup}"
+			compressionType="${kafka.compressionType}"
+			connectionsMaximumIdleTimeUnit="${kafka.connectionsMaximumIdleTimeUnit}"
+			deliveryTimeoutTimeUnit="${kafka.deliveryTimeoutTimeUnit}"
+			lingerTimeUnit="${kafka.lingerTimeUnit}"
+			maximumBlockTimeUnit="${kafka.maximumBlockTimeUnit}"
+			maximumRequestSizeUnit="${kafka.maximumRequestSizeUnit}"
+			producerAck="${kafka.producerAck}"
+			receiveBufferSizeUnit="${kafka.receiveBufferSizeUnit}"
+			retryBackoffTimeoutTimeUnit="${kafka.retryBackoffTimeoutTimeUnit}"
+			sendBufferSizeUnit="${kafka.sendBufferSizeUnit}"
+			requestTimeoutTimeUnit="${kafka.requestTimeoutTimeUnit}"
+			partitioner="${kafka.partitioner}">
+			<tls:context>
+				<tls:key-store type="jks"
+					keyPassword="${secure::jks.password}"
+					password="${secure::jks.password}" path="${secure::jks.path}" />
+			</tls:context>
+			<kafka:bootstrap-servers>
+				<kafka:bootstrap-server value="${kafka.url}" />
+			</kafka:bootstrap-servers>
+		</kafka:producer-sasl-plain-connection>
+	</kafka:producer-config>
+	<error-handler name="global-error-handler-propagate" doc:id="dc0f1fb1-b43d-4c49-bd7a-2360e1d9ebb9" >
+		<on-error-propagate enableNotifications="true" logException="true" doc:name="On Error Propagate" doc:id="9b88af66-2557-4c42-a3be-b9914f25e910" >
+			<flow-ref doc:name="global-error-handler-sub-flow" doc:id="cb3b039e-5874-4deb-a07d-78cbfdd4d3e6" name="global-error-handler-sub-flow"/>
+			<choice doc:name="Choice" doc:id="65d28532-f085-4b37-9871-3de1fc3fae25" >
+				<when expression="#[if(vars.vExplicitReprocessing default false as Boolean) true&#10;else ((Mule::p('reprocess') default true) &#10;	and (vars.vReprocess default true) &#10;	and (vars.vErrorPayload.errorCategory == &quot;TECHNICAL&quot;)&#10;	and !((Mule::p('errorType.skipReprocessErrors') splitBy  &quot;,&quot;) contains vars.vErrorPayload.errorType)&#10;) as Boolean]">
+					<try doc:name="Try" doc:id="0f8b74c7-6222-41e4-b8f6-63aa71baf963" >
+						<flow-ref doc:name="re-publish" doc:id="b614196b-6457-4503-add3-8b0a53beba63" name="re-publish" />
+						<error-handler >
+							<on-error-propagate enableNotifications="true" logException="true" doc:name="On Error Propagate" doc:id="170cc8cd-9b5f-454b-a84b-57a20f7f6e76" >
+								<set-variable value="#['']" doc:name="set null error payload" doc:id="674fddca-e36b-4487-9b95-8738b92de621" variableName="vErrorPayload" />
+								<flow-ref doc:name="global-error-handler-sub-flow" doc:id="b71ce1ba-57a9-43a2-b0a6-321935ee11e9" name="global-error-handler-sub-flow"/>
+							</on-error-propagate>
+						</error-handler>
+					</try>
+				</when>
+			</choice>
+			<ee:transform doc:name="error payload response" doc:id="e0dd891d-55ba-4832-96aa-e893bc6c1cd1" >
+				<ee:message >
+					<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+vars.vErrorPayload]]></ee:set-payload>
+				</ee:message>
+			</ee:transform>
+		</on-error-propagate>
+	</error-handler>
+	<error-handler name="global-error-handler-continue" doc:id="f8598b8a-3bae-48b1-9e05-95bb0916312d" >
+		<on-error-continue enableNotifications="true" logException="true" doc:name="On Error Continue" doc:id="f03a643b-d13b-4756-8667-4fc54937cf14" >
+			<flow-ref doc:name="global-error-handler-sub-flow" doc:id="d36f4d6f-17b3-4594-9e94-fe1d0862e347" name="global-error-handler-sub-flow"/>
+			<choice doc:name="Choice" doc:id="c8974aaa-fcb5-4ffe-9071-56bc5b2c1a04" >
+				<when expression="#[if(vars.vExplicitReprocessing default false as Boolean) true&#10;else ((Mule::p('reprocess') default true) &#10;	and (vars.vReprocess default true) &#10;	and (vars.vErrorPayload.errorCategory == &quot;TECHNICAL&quot;)&#10;	and !((Mule::p('errorType.skipReprocessErrors') splitBy  &quot;,&quot;) contains vars.vErrorPayload.errorType)&#10;) as Boolean]">
+					<try doc:name="Try" doc:id="49b2326a-0ce9-43c1-9244-7f1f94d915de" >
+						<flow-ref doc:name="re-publish" doc:id="039622fa-b7f4-4f62-af4e-c7487f216c67" name="re-publish" />
+						<error-handler >
+							<on-error-continue enableNotifications="true" logException="true" doc:name="On Error Continue" doc:id="dafd4d60-fdb4-404b-bb6b-ef39483a00a9" >
+								<set-variable value="#['']" doc:name="set null error payload" doc:id="e4e8f6ef-525e-4a3e-b29a-ecc983f0b115" variableName="vErrorPayload" />
+								<flow-ref doc:name="global-error-handler-sub-flow" doc:id="a1459bcb-ac0d-4ed2-949b-fd81791583a6" name="global-error-handler-sub-flow" />
+							</on-error-continue>
+						</error-handler>
+					</try>
+				</when>
+			</choice>
+			<ee:transform doc:name="error payload response" doc:id="79f6796f-3a69-4951-9688-007f79bc6789" >
+				<ee:message >
+					<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+vars.vErrorPayload]]></ee:set-payload>
+				</ee:message>
+			</ee:transform>
+		</on-error-continue>
+	</error-handler>
+	<sub-flow name="global-error-handler-sub-flow" doc:id="1eabcf80-0225-447c-843f-a06c58b6264a" >
+		<ee:transform doc:name="set http status code" doc:id="cbee5d81-f8fd-4183-b8af-a4e5321c2bc8" >
+			<ee:message >
+			</ee:message>
+			<ee:variables >
+				<ee:set-variable variableName="httpStatus" ><![CDATA[%dw 2.0
+import * from statusCode
+output application/json
+---
+vars.httpStatus default (
+	if((!isEmpty(error.errorMessage.attributes.statusCode)) and (error.errorMessage.attributes.statusCode != 500)) 
+		error.errorMessage.attributes.statusCode
+	else if (!isEmpty(error.attributes.statusCode)) 
+		error.attributes.statusCode
+	else generateHttpStatusCode((error.errorType.namespace default "") ++ ":" ++ (error.errorType.identifier default "")))]]></ee:set-variable>
+				<ee:set-variable variableName="vSequence" ><![CDATA[output application/json
+---
+error.errorMessage.attributes.headers.sequence default vars.vSequence]]></ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<choice doc:name="Choice to check creation of error payload" doc:id="750a8e6b-7fb8-48ac-8df1-cec1b669b8eb" >
+			<when expression="#[!isEmpty(vars.vErrorPayload)]">
+				<ee:transform doc:name="set custom error response" doc:id="8ba09a17-4a25-4865-8066-b25af073ff3c">
+					<ee:message>
+					</ee:message>
+					<ee:variables >
+						<ee:set-variable variableName="vErrorPayload" ><![CDATA[%dw 2.0
+output application/json
+---
+vars.vErrorPayload]]></ee:set-variable>
+					</ee:variables>
+				</ee:transform>
+			</when>
+			<otherwise >
+				<ee:transform doc:name="generate error response" doc:id="4b54e81e-30d5-4081-8404-77fd48228aa3">
+					<ee:message>
+					</ee:message>
+					<ee:variables >
+						<ee:set-variable variableName="vErrorPayload" ><![CDATA[%dw 2.0
+output application/json
+import firstWith from dw::core::Arrays
+// Function to convert data type to string
+fun toStringFormat(value, def="") = do {
+	var message = if ( !isEmpty(value) ) value else def default ""
+	---
+	typeOf(message) match {
+		case "String" -> message
+        case "Number" -> message as String
+        case "Binary" -> read(message, "text/plain")  
+        else -> write(message, "application/java")
+	}
+}
+var business = Mule::p('errorType.business') splitBy  ","
+
+var technical = Mule::p('errorType.technical') splitBy  ","
+
+fun errorCategory(errorType) = if (business contains(errorType)) "BUSINESS"
+	else if (technical contains(errorType)) "TECHNICAL"
+	else "TECHNICAL"
+
+---
+// This condition handles COMPOSITE_ROUTING and RETRY_EXHAUSTED errorType
+if ( ['COMPOSITE_ROUTING', 'RETRY_EXHAUSTED'] contains error.errorType.identifier ) (do {
+	var getErrorDescription = toStringFormat(error.description)
+	var getSuppressedErrorMessage =  do {
+		var message = [error.childErrors..errorMessage.payload, error.suppressedErrors..errorMessage.payload] firstWith(!isEmpty($))
+		---
+		if ( message is Array ) toStringFormat(message map (toStringFormat($)) distinctBy $)
+	    else toStringFormat(message)
+	}
+	var errorType = if ( !isEmpty(error.suppressedErrors) ) error.suppressedErrors..namespace[0] ++ ":" ++ error.suppressedErrors..identifier[0]
+					else if ( !isEmpty(error.childErrors) ) error.childErrors..errorType map ($.namespace ++ ":" ++ $.identifier) distinctBy ($) joinBy ", "
+					else (error.errorType.namespace ++ ":" ++ error.errorType.identifier)
+	---
+	{
+		"transactionId": vars.vApi_Header.correlationId default correlationId,
+		"statusCode": vars.httpStatus,
+		"errorType": errorType default ((error.errorType.namespace default "") ++ ":" ++ (error.errorType.identifier default "")),
+		"errorCategory": errorCategory((error.errorType.namespace default "") ++ ":" ++ (error.errorType.identifier default "")),
+		"errorMessage": error.description,
+		"errorDetails": ((([getSuppressedErrorMessage, getErrorDescription] filter !isEmpty($)) distinctBy $) joinBy " | ") default "Unknown",
+		"apiName": Mule::p('api.name') default Mule::p('app.name'),
+		"method": vars.vApi_Header.x_api_flow default ""
+	}
+})
+
+// This if else condition handles any propagated error from calling API's and error response should not be in Binary format
+//else if ( (!isEmpty(error.errorMessage.payload)) and (typeOf(error.errorMessage.payload) as String != "Binary") and (typeOf(error.errorMessage.payload) as String != "String") ) 
+else if ( (!isEmpty(error.errorMessage.payload)) and (typeOf(error.errorMessage.payload) as String == "Object") ) 
+{
+	"transactionId": error.errorMessage.payload.transactionId default vars.vApi_Header.correlationId default correlationId,
+	"statusCode": error.errorMessage.payload.statusCode default vars.httpStatus,
+	"errorType": error.errorMessage.payload.errorType default ((error.errorType.namespace default "") ++ ":" ++ (error.errorType.identifier default "")),
+	"errorCategory": error.errorMessage.payload.errorCategory default errorCategory((error.errorType.namespace default "") ++ ":" ++ (error.errorType.identifier default "")),
+	"errorMessage": error.errorMessage.payload.errorMessage default error.description,
+	"errorDetails": error.errorMessage.payload.errorDetails default error.detailedDescription,
+	"apiName": error.errorMessage.payload.apiName default Mule::p('api.name') default Mule::p('app.name'),
+	"method": error.errorMessage.payload.method default vars.vApi_Header.x_api_flow,
+	"S4_HANA": if ( !isEmpty(error.errorMessage.payload.S4_HANA) ) error.errorMessage.payload.S4_HANA 
+		else if ( (typeOf(error.errorMessage.payload.error) as String == "Object") and !isEmpty(error.errorMessage.payload.error.message) ) {
+			"error_code": error.errorMessage.payload.error.innererror.errordetails[0].code default error.errorMessage.payload.error.code,
+			"error": error.errorMessage.payload.error.innererror.errordetails[0].message default error.errorMessage.payload.error.message,
+			"error_detail": {
+				"component_id": error.errorMessage.payload.error.innererror.application.component_id default "",
+				"service_id": error.errorMessage.payload.error.innererror.application.service_id default "",
+				"service_version": error.errorMessage.payload.error.innererror.application.service_version default "",
+				"transaction_id": error.errorMessage.payload.error.innererror.transactionid default "",
+				"target": error.errorMessage.payload.error.innererror.errordetails.target default ""
+			}
+		}
+	else null
+}
+
+// If any error are not handled in above two conditions will be handled in else (default)
+else {
+	"transactionId": vars.vApi_Header.correlationId default correlationId,
+	"statusCode": vars.httpStatus,
+	"errorType": (error.errorType.namespace default "") ++ ":" ++ (error.errorType.identifier default ""),
+	"errorCategory": errorCategory((error.errorType.namespace default "") ++ ":" ++ (error.errorType.identifier default "")),
+	"errorMessage": error.description,
+	"errorDetails": error.detailedDescription,
+	"apiName": Mule::p('api.name') default Mule::p('app.name'),
+	"method": vars.vApi_Header.x_api_flow default ""
+}]]></ee:set-variable>
+					</ee:variables>
+				</ee:transform>
+			</otherwise>
+		</choice>
+		<module-sg-mule-enterprise-logger:logger
+			doc:name="log error message"
+			doc:id="9abc287b-11ef-4d31-860f-9e4d94de1e2f"
+			config-ref="Error_Handler_Logger_Config"
+			application_name="#[vars.vApi_Header.applicationName]"
+			message_log='#[vars.vDataDogErrorMsg default "Exception Occured"]'
+			method='#[vars.vApi_Header.x_api_flow default ""]'
+			direction='#[upper(vars.vApi_Header.direction) default ""]'
+			correlation_id="#[output application/json --- vars.vApi_Header.correlationId default correlationId]"
+			transaction_id="#[output application/json --- vars.vApi_Header.transactionId default correlationId]"
+			business_object='#[upper(vars.vApi_Header.businessObject) default ""]'
+			business_object_key='#[vars.vApi_Header.businessObjectKey default ""]'
+			country="#[vars.vApi_Header.country]"
+			source_system="#[Mule::p('api.name')]" target_system='#["Datadog"]'
+			error_details='#[output application/json --- if(!isEmpty(vars.vErrorPayload.S4_HANA)) ("S4_HANA": vars.vErrorPayload.S4_HANA) else vars.vErrorPayload.errorDetails]'
+			error_message="#[vars.vErrorPayload.errorMessage]"
+			error_type="#[vars.vErrorPayload.errorType]"
+			error_category="#[vars.vErrorPayload.errorCategory]" status="ERROR"
+			error_code='#[vars.vErrorPayload.S4_HANA.error_code]'
+			sequence="#[(vars.vSequence default 0)]"
+			sap_sid="#[vars.vApi_Header.sap_sid default vars.vApi_Header.eventSource]" target="vSequence" targetValue="#[payload + 1]"/>
+	</sub-flow>
+	<sub-flow name="re-publish" doc:id="f3767f95-7704-4b4d-b66e-ac3a458b9a0f" >
+		<ee:transform doc:name="set kafka details" doc:id="95b8ff2a-3fce-4688-8835-1f65c33851dc" >
+			<ee:message >
+			</ee:message>
+			<ee:variables >
+				<ee:set-variable variableName="vkafkaDetails" ><![CDATA[%dw 2.0
+output application/json
+---
+if(!isEmpty(vars.vkafkaDetails)) vars.vkafkaDetails
+else {
+	"errorTopic": if(!isEmpty(vars.vKafkaErrorTopic)) vars.vKafkaErrorTopic else Mule::p('kafka.errQueue'),
+	"dlqTopic": if(!isEmpty(vars.vKafkaDLQTopic)) vars.vKafkaDLQTopic else Mule::p('kafka.dlq'), 
+	"header": if(!isEmpty(vars.vKafkaHeader)) vars.vKafkaHeader else {
+		"x-correlation-id": vars.vApi_Header.correlationId,
+		"x-message-id": vars.vApi_Header.businessObjectKey,
+		"businessObjectKey": vars.vApi_Header.businessObjectKey
+	}
+}]]></ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<ee:transform doc:name="set reprocess payload" doc:id="d8a9754f-1456-4743-8ff6-d1ea9d4f2c5d">
+			<ee:message>
+			</ee:message>
+			<ee:variables >
+				<ee:set-variable variableName="vKafkaReprocessPayload" ><![CDATA[%dw 2.0
+output application/json
+var vControlData = vars.vInputRequest.controlData
+---
+if (!isEmpty(vars.vKafkaReprocessPayload)) vars.vKafkaReprocessPayload
+else if ( vControlData.lastProcessed.firstTimeInd == false ) {
+	"controlData": {
+		"eventType": vControlData.eventType,
+		"eventSource": vControlData.eventSource,
+		"apiInvocations": vControlData.apiInvocations,
+		"attributes": {
+			"env": Mule::p('mule.env'),
+			"applicationName": vControlData.attributes.applicationName,
+			"businessObject": vControlData.attributes.businessObject,
+			"direction": vControlData.attributes.direction,
+			"businessObjectKey": vControlData.attributes.businessObjectKey,
+			"correlationId": vControlData.attributes.correlationId,
+			"service": vControlData.attributes.service,
+			"method": vControlData.attributes.method,
+			"status": "ERROR",
+			"country": vControlData.attributes.country,
+			"timestamp": ((now() >> 'CET') as DateTime as String { format: "yyyy-MM-dd'T'HH:mm:ss'Z'" })
+		},
+		"lastProcessed": {
+			"firstTimeInd": vControlData.lastProcessed.firstTimeInd,
+			"processing": vControlData.lastProcessed.processing,
+			"originalErrorDate": vControlData.lastProcessed.originalErrorDate,
+			"lastRetryDate": ((now() >> 'CET') as DateTime as String { format: "yyyy-MM-dd" }),
+			"lastRetryTime": ((now() >> 'CET') as DateTime as String { format: "HH:mm:ss" }),
+			"errorMessage": vars.vErrorPayload.S4_HANA.error default vars.vErrorPayload.errorMessage,
+			"errorCode": vars.vErrorPayload.S4_HANA.error_code default "",
+			"httpCode": vars.httpStatus,
+			"dailyRetryCount": (vControlData.lastProcessed.dailyRetryCount default 0) + 1,
+			"totalRetryCount": (vControlData.lastProcessed.totalRetryCount default 0) + 1,
+			"totalRetryDays": if ( vControlData.lastProcessed.dailyRetryCount >= (Mule::p('error.dailyRetryCount') default 0)) ((vControlData.lastProcessed.totalRetryDays default 0) + 1) 
+				else vControlData.lastProcessed.totalRetryDays
+		}
+	},
+	"data": vars.vInputRequest.data
+}
+else {
+	"controlData": {
+		"eventType": vars.vApi_Header.eventType,
+		"eventSource": vars.vApi_Header.eventSource,
+		"apiInvocations": vars.vApi_Header.apiInvocations,
+		"attributes": {
+			"env": Mule::p('mule.env'),
+			"applicationName": upper(vars.vApi_Header.applicationName) default "",
+			"businessObject": upper(vars.vApi_Header.businessObject) default "",
+			"direction": upper(vars.vApi_Header.direction) default "",
+			"businessObjectKey": vars.vApi_Header.businessObjectKey default "",
+			"correlationId": vars.vApi_Header.correlationId default "",
+			"service": Mule::p('api.name'),
+			"method": vars.vApi_Header.x_api_flow default "",
+			"status": "ERROR",
+			"country": vars.vApi_Header.country,
+			"timestamp": ((now() >> 'CET') as DateTime as String { format: "yyyy-MM-dd'T'HH:mm:ss'Z'" })
+		},
+		"lastProcessed": {
+			"firstTimeInd": false,
+			"processing": "",
+			"originalErrorDate": ((now() >> 'CET') as DateTime as String { format: "yyyy-MM-dd" }),
+			"lastRetryDate": ((now() >> 'CET') as DateTime as String { format: "yyyy-MM-dd" }),
+			"lastRetryTime": ((now() >> 'CET') as DateTime as String { format: "HH:mm:ss" }),
+			"errorMessage": vars.vErrorPayload.S4_HANA.error default vars.vErrorPayload.errorMessage,
+			"errorCode": vars.vErrorPayload.S4_HANA.error_code default "",
+			"httpCode": vars.httpStatus,
+			"dailyRetryCount": 0,
+			"totalRetryCount": 0,
+			"totalRetryDays": 0
+		}
+	},
+	"data": vars.vInputRequest.data
+}]]></ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<choice doc:name="Check RetryCount" doc:id="984f47ae-b7d0-4575-a28c-659817e84cd7" >
+			<when expression="#[(vars.vKafkaReprocessPayload.controlData.lastProcessed.dailyRetryCount &gt; (Mule::p('error.dailyRetryCount') default 0))]" >
+				<kafka:publish doc:id="d61bbf0c-3805-4d10-b9d5-06ee2279d887" doc:name="publish payload to dlq" config-ref="Apache_Kafka_Reprocess_Producer_configuration" topic="#[vars.vkafkaDetails.dlqTopic]" key='#[vars.vApi_Header.businessObjectKey default ""]'>
+					<reconnect frequency="${reconnection.frequency}" count="${reconnection.attempt}" blocking="false" />
+					<kafka:message ><![CDATA[#[vars.vKafkaReprocessPayload]]]></kafka:message>
+					<kafka:headers ><![CDATA[#[vars.vkafkaDetails.vKafkaHeader]]]></kafka:headers>
+				</kafka:publish>
+				<module-sg-mule-enterprise-logger:logger
+					doc:name="log after publish to dlq"
+					doc:id="e3733618-2090-468e-aead-e7b8932189a9"
+					config-ref="Error_Handler_Logger_Config"
+					application_name="#[vars.vApi_Header.applicationName]"
+					message_log='#["Published message to DLQ " ++ (vars.vkafkaDetails.dlqTopic default "")]'
+					message="#[vars.vKafkaReprocessPayload]"
+					method='#[vars.vApi_Header.x_api_flow default ""]'
+					source_system="#[Mule::p('api.name')]"
+					target_system='#[vars.vkafkaDetails.dlqTopic]'
+					business_object='#[upper(vars.vApi_Header.businessObject) default ""]'
+					business_object_key='#[vars.vApi_Header.businessObjectKey default ""]'
+					correlation_id="#[output application/json --- vars.vApi_Header.correlationId default correlationId]"
+					country="#[output application/json --- vars.vApi_Header.country default Mule::p('integrationDetails.country')]"
+					direction='#[upper(vars.vApi_Header.direction) default ""]'
+					transaction_id="#[output application/json --- vars.vApi_Header.transactionId default correlationId]"
+					sequence="#[(vars.vSequence default 0)]"
+					sap_sid="#[vars.vApi_Header.sap_sid default vars.vApi_Header.eventSource]" target="vSequence" targetValue="#[payload + 1]"/>
+			</when>
+			<otherwise >
+				<kafka:publish doc:id="dd7e6f79-e6c8-4a42-b33d-ecbc8bdf1a59" topic="#[vars.vkafkaDetails.errorTopic]" doc:name="publish payload to reprocess queue" config-ref="Apache_Kafka_Reprocess_Producer_configuration" key='#[vars.vApi_Header.businessObjectKey default ""]'>
+					<reconnect frequency="${reconnection.frequency}" count="${reconnection.attempt}" blocking="false" />
+					<kafka:message ><![CDATA[#[vars.vKafkaReprocessPayload]]]></kafka:message>
+					<kafka:headers ><![CDATA[#[vars.vkafkaDetails.header]]]></kafka:headers>
+				</kafka:publish>
+				<module-sg-mule-enterprise-logger:logger
+					doc:name="log after publish to error topic"
+					doc:id="f3790aeb-0477-49f2-9a2d-9290dd9341e3"
+					config-ref="Error_Handler_Logger_Config"
+					application_name="#[vars.vApi_Header.applicationName]"
+					message_log='#["Published message to Error Topic " ++ (vars.vkafkaDetails.errorTopic default "")]'
+					message="#[vars.vKafkaReprocessPayload]" method='#[vars.vApi_Header.x_api_flow default ""]'
+					source_system="#[Mule::p('api.name')]"
+					target_system="#[vars.vkafkaDetails.errorTopic]"
+					business_object='#[upper(vars.vApi_Header.businessObject) default ""]'
+					business_object_key='#[vars.vApi_Header.businessObjectKey default ""]'
+					correlation_id="#[output application/json --- vars.vApi_Header.correlationId default correlationId]"
+					country="#[vars.vApi_Header.country default Mule::p('integrationDetails.country')]"
+					direction='#[upper(vars.vApi_Header.direction) default ""]'
+					transaction_id="#[output application/json --- vars.vApi_Header.transactionId default correlationId]"
+					sequence="#[(vars.vSequence default 0)]"
+					sap_sid="#[vars.vApi_Header.sap_sid default vars.vApi_Header.eventSource]" target="vSequence" targetValue="#[payload + 1]"/>
+			</otherwise>
+		</choice>
+	</sub-flow>
+</mule>
